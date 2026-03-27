@@ -279,6 +279,54 @@ describe('run', () => {
     expect(mockedCore.setOutput).toHaveBeenCalledWith('renamed', '')
   })
 
+  test('works with pull_request_target events', async () => {
+    mockedGithub.context = {
+      eventName: 'pull_request_target',
+      payload: {
+        pull_request: {
+          base: {sha: 'prt-base'},
+          head: {sha: 'prt-head'},
+        },
+      },
+      repo: {owner: 'test-owner', repo: 'test-repo'},
+    }
+
+    mockCompareCommits.mockResolvedValue({
+      status: 200,
+      data: {files: [{filename: 'file.ts', status: 'modified'}]},
+    })
+
+    await run()
+
+    expect(mockedCore.setFailed).not.toHaveBeenCalled()
+    expect(mockCompareCommits).toHaveBeenCalledWith(expect.objectContaining({base: 'prt-base', head: 'prt-head'}))
+  })
+
+  test('handles response with undefined files array', async () => {
+    mockCompareCommits.mockResolvedValue({
+      status: 200,
+      data: {},
+    })
+
+    await run()
+
+    expect(mockedCore.setFailed).not.toHaveBeenCalled()
+    expect(mockedCore.setOutput).toHaveBeenCalledWith('all', '')
+  })
+
+  test('propagates space-in-filename error for space-delimited format', async () => {
+    mockCompareCommits.mockResolvedValue({
+      status: 200,
+      data: {
+        files: [{filename: 'file with spaces.ts', status: 'added'}],
+      },
+    })
+
+    await run()
+
+    expect(mockedCore.setFailed).toHaveBeenCalledWith(expect.stringContaining('includes a space'))
+  })
+
   test('passes correct parameters to compareCommits', async () => {
     mockCompareCommits.mockResolvedValue({
       status: 200,
