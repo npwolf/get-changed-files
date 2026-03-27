@@ -7,11 +7,12 @@ export async function run(): Promise<void> {
     // Create GitHub client with the API token.
     const client = github.getOctokit(core.getInput('token', {required: true}))
     const format = core.getInput('format', {required: true}) as Format
-    const filter = core.getMultilineInput('filter', {required: true}) || '*'
+    const filter = core.getMultilineInput('filter', {required: true})
 
     // Ensure that the format parameter is set properly.
     if (format !== 'space-delimited' && format !== 'csv' && format !== 'json') {
-      core.setFailed(`Format must be one of 'string-delimited', 'csv', or 'json', got '${format}'.`)
+      core.setFailed(`Format must be one of 'space-delimited', 'csv', or 'json', got '${format}'.`)
+      return
     }
 
     // Debug log the payload.
@@ -39,6 +40,7 @@ export async function run(): Promise<void> {
         `The GitHub API for comparing the base and head commits for this ${github.context.eventName} event returned ${response.status}, expected 200. ` +
           "Please submit an issue on this action's GitHub repo."
       )
+      return
     }
 
     // Map response files to our ChangedFile interface.

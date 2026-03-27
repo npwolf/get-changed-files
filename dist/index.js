@@ -33,7 +33,7 @@ payload) {
             break;
         default:
             throw new Error(`This action only supports pull requests and pushes, ${eventName} events are not supported. ` +
-                "Please submit an issue on this action's GitHub repo if you believe this in correct.");
+                "Please submit an issue on this action's GitHub repo if you believe this is incorrect.");
     }
     if (!base || !head) {
         throw new Error(`The base and head commits are missing from the payload for this ${eventName} event. ` +
@@ -42,14 +42,19 @@ payload) {
     return { base, head };
 }
 function filterFiles(files, patterns) {
+    const opts = { matchBase: true, dot: true };
+    const compiled = patterns.map(p => ({
+        negate: p.startsWith('!'),
+        matcher: new minimatch_1.Minimatch(p, opts),
+    }));
     return files.filter(file => {
         let match = false;
-        for (const pattern of patterns) {
-            if (pattern.startsWith('!')) {
-                match = match && (0, minimatch_1.minimatch)(file.filename, pattern, { matchBase: true, dot: true });
+        for (const { negate, matcher } of compiled) {
+            if (negate) {
+                match = match && matcher.match(file.filename);
             }
             else {
-                match = match || (0, minimatch_1.minimatch)(file.filename, pattern, { matchBase: true, dot: true });
+                match = match || matcher.match(file.filename);
             }
         }
         return match;
@@ -95,14 +100,16 @@ function categorizeFiles(files) {
     return { all, added, modified, removed, renamed, addedModified, addedModifiedRenamed };
 }
 function formatOutput(categories, format) {
+    if (format === 'space-delimited') {
+        for (const file of categories.all) {
+            if (file.includes(' ')) {
+                throw new Error('One of your files includes a space. Consider using a different output format or removing spaces from your filenames.');
+            }
+        }
+    }
     const formatArray = (arr) => {
         switch (format) {
             case 'space-delimited':
-                for (const file of arr) {
-                    if (file.includes(' ')) {
-                        throw new Error('One of your files includes a space. Consider using a different output format or removing spaces from your filenames.');
-                    }
-                }
                 return arr.join(' ');
             case 'csv':
                 return arr.join(',');
@@ -172,10 +179,11 @@ async function run() {
         // Create GitHub client with the API token.
         const client = github.getOctokit(core.getInput('token', { required: true }));
         const format = core.getInput('format', { required: true });
-        const filter = core.getMultilineInput('filter', { required: true }) || '*';
+        const filter = core.getMultilineInput('filter', { required: true });
         // Ensure that the format parameter is set properly.
         if (format !== 'space-delimited' && format !== 'csv' && format !== 'json') {
-            core.setFailed(`Format must be one of 'string-delimited', 'csv', or 'json', got '${format}'.`);
+            core.setFailed(`Format must be one of 'space-delimited', 'csv', or 'json', got '${format}'.`);
+            return;
         }
         // Debug log the payload.
         core.debug(`Payload keys: ${Object.keys(github.context.payload)}`);
@@ -196,6 +204,7 @@ async function run() {
         if (response.status !== 200) {
             core.setFailed(`The GitHub API for comparing the base and head commits for this ${github.context.eventName} event returned ${response.status}, expected 200. ` +
                 "Please submit an issue on this action's GitHub repo.");
+            return;
         }
         // Map response files to our ChangedFile interface.
         const responseFiles = (response.data.files || []).map(f => ({

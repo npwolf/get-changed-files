@@ -1,4 +1,4 @@
-import {minimatch} from 'minimatch'
+import {Minimatch} from 'minimatch'
 
 export type Format = 'space-delimited' | 'csv' | 'json'
 export type FileStatus = 'added' | 'modified' | 'removed' | 'renamed'
@@ -54,7 +54,7 @@ export function getBaseAndHead(
     default:
       throw new Error(
         `This action only supports pull requests and pushes, ${eventName} events are not supported. ` +
-          "Please submit an issue on this action's GitHub repo if you believe this in correct."
+          "Please submit an issue on this action's GitHub repo if you believe this is incorrect."
       )
   }
 
@@ -69,13 +69,18 @@ export function getBaseAndHead(
 }
 
 export function filterFiles(files: ChangedFile[], patterns: string[]): ChangedFile[] {
+  const opts = {matchBase: true, dot: true}
+  const compiled = patterns.map(p => ({
+    negate: p.startsWith('!'),
+    matcher: new Minimatch(p, opts),
+  }))
   return files.filter(file => {
     let match = false
-    for (const pattern of patterns) {
-      if (pattern.startsWith('!')) {
-        match = match && minimatch(file.filename, pattern, {matchBase: true, dot: true})
+    for (const {negate, matcher} of compiled) {
+      if (negate) {
+        match = match && matcher.match(file.filename)
       } else {
-        match = match || minimatch(file.filename, pattern, {matchBase: true, dot: true})
+        match = match || matcher.match(file.filename)
       }
     }
     return match
@@ -127,16 +132,19 @@ export function categorizeFiles(files: ChangedFile[]): CategorizedFiles {
 }
 
 export function formatOutput(categories: CategorizedFiles, format: Format): FormattedOutput {
+  if (format === 'space-delimited') {
+    for (const file of categories.all) {
+      if (file.includes(' ')) {
+        throw new Error(
+          'One of your files includes a space. Consider using a different output format or removing spaces from your filenames.'
+        )
+      }
+    }
+  }
+
   const formatArray = (arr: string[]): string => {
     switch (format) {
       case 'space-delimited':
-        for (const file of arr) {
-          if (file.includes(' ')) {
-            throw new Error(
-              'One of your files includes a space. Consider using a different output format or removing spaces from your filenames.'
-            )
-          }
-        }
         return arr.join(' ')
       case 'csv':
         return arr.join(',')
