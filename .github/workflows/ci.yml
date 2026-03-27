@@ -3,11 +3,15 @@ name: CI
 on:
   pull_request:
     types: [opened, edited, synchronize, reopened]
+  push:
+    branches:
+      - main
 
 jobs:
   validate-pr-title:
     name: Validate PR Title
-    runs-on: ubuntu-22.04
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
     steps:
       - uses: amannn/action-semantic-pull-request@v5
         env:
@@ -21,3 +25,93 @@ jobs:
             ci
             refactor
             test
+
+  build-and-test:
+    name: Build and Test
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Install dependencies
+        run: yarn
+
+      - name: Clean, build, format, lint, package, and test
+        run: yarn all
+
+      - name: Check if packaged properly
+        run: |
+          if git diff --name-only | grep '^dist/' || git ls-files --other --exclude-standard | grep '^dist/'; then
+            echo "dist/ is out of date. Run 'yarn all' and commit the changes."
+            exit 1
+          fi
+
+  integration-test:
+    name: Integration Test
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - id: files
+        name: Run action without filtering
+        uses: ./
+
+      - name: Print outputs
+        run: |
+          echo 'all=${{ steps.files.outputs.all }}'
+          echo 'added=${{ steps.files.outputs.added }}'
+          echo 'modified=${{ steps.files.outputs.modified }}'
+          echo 'removed=${{ steps.files.outputs.removed }}'
+          echo 'renamed=${{ steps.files.outputs.renamed }}'
+          echo 'added_modified=${{ steps.files.outputs.added_modified }}'
+          echo 'added_modified_renamed=${{ steps.files.outputs.added_modified_renamed }}'
+
+      - id: files-filtered
+        name: Run action with filtering
+        uses: ./
+        with:
+          filter: |
+            *.yml
+            !.github/*/*.yml
+            *.js
+            *.ts
+            package*
+            !*.json
+
+      - name: Print filtered outputs
+        run: |
+          echo 'all=${{ steps.files-filtered.outputs.all }}'
+          echo 'added=${{ steps.files-filtered.outputs.added }}'
+          echo 'modified=${{ steps.files-filtered.outputs.modified }}'
+          echo 'removed=${{ steps.files-filtered.outputs.removed }}'
+          echo 'renamed=${{ steps.files-filtered.outputs.renamed }}'
+          echo 'added_modified=${{ steps.files-filtered.outputs.added_modified }}'
+          echo 'added_modified_renamed=${{ steps.files-filtered.outputs.added_modified_renamed }}'
+
+  required-checks:
+    name: Required Checks
+    needs: [validate-pr-title, build-and-test, integration-test]
+    if: always()
+    runs-on: ubuntu-latest
+    steps:
+      - name: Verify all checks passed
+        run: |
+          if [[ "${{ needs.build-and-test.result }}" != "success" ]]; then
+            echo "Build and test failed"
+            exit 1
+          fi
+          if [[ "${{ needs.integration-test.result }}" != "success" ]]; then
+            echo "Integration test failed"
+            exit 1
+          fi
+          if [[ "${{ needs.validate-pr-title.result }}" != "success" && "${{ needs.validate-pr-title.result }}" != "skipped" ]]; then
+            echo "PR title validation failed"
+            exit 1
+          fi
+          echo "All checks passed"
