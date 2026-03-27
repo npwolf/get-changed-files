@@ -1,9 +1,6 @@
 import * as core from '@actions/core'
 import {context, GitHub} from '@actions/github'
-import minimatch from 'minimatch'
-
-type Format = 'space-delimited' | 'csv' | 'json'
-type FileStatus = 'added' | 'modified' | 'removed' | 'renamed'
+import {filterFiles, categorizeFiles, formatOutput, getBaseAndHead, Format, ChangedFile} from './helpers'
 
 async function run(): Promise<void> {
   try {
@@ -20,49 +17,12 @@ async function run(): Promise<void> {
     // Debug log the payload.
     core.debug(`Payload keys: ${Object.keys(context.payload)}`)
 
-    // Get event name.
-    const eventName = context.eventName
-
-    // Define the base and head commits to be extracted from the payload.
-    let base: string | undefined
-    let head: string | undefined
-
-    switch (eventName) {
-      case 'pull_request_target':
-      case 'pull_request':
-        base = context.payload.pull_request?.base?.sha
-        head = context.payload.pull_request?.head?.sha
-        break
-      case 'merge_group':
-        base = context.payload.merge_group?.base_sha
-        head = context.payload.merge_group?.head_sha
-        break
-      case 'push':
-        base = context.payload.before
-        head = context.payload.after
-        break
-      default:
-        core.setFailed(
-          `This action only supports pull requests and pushes, ${context.eventName} events are not supported. ` +
-            "Please submit an issue on this action's GitHub repo if you believe this in correct."
-        )
-    }
+    // Get base and head commits from the event payload.
+    const {base, head} = getBaseAndHead(context.eventName, context.payload)
 
     // Log the base and head commits
     core.info(`Base commit: ${base}`)
     core.info(`Head commit: ${head}`)
-
-    // Ensure that the base and head properties are set on the payload.
-    if (!base || !head) {
-      core.setFailed(
-        `The base and head commits are missing from the payload for this ${context.eventName} event. ` +
-          "Please submit an issue on this action's GitHub repo."
-      )
-
-      // To satisfy TypeScript, even though this is unreachable.
-      base = ''
-      head = ''
-    }
 
     // Use GitHub's compare two commits API.
     // https://developer.github.com/v3/repos/commits/#compare-two-commits
@@ -70,7 +30,7 @@ async function run(): Promise<void> {
       base,
       head,
       owner: context.repo.owner,
-      repo: context.repo.repo
+      repo: context.repo.repo,
     })
 
     // Ensure that the request was successful.
@@ -81,137 +41,41 @@ async function run(): Promise<void> {
       )
     }
 
-    const files = response.data.files.filter(file => {
-      let match = false
-      for (const item of filter) {
-        const pattern = item
-        core.debug(`Test ${file.filename} against ${pattern}`)
-        core.debug(`current match value: ${match}`)
-        if (pattern.startsWith('!')) {
-          match = match && minimatch(file.filename, pattern, {matchBase: true, dot: true})
-        } else {
-          match = match || minimatch(file.filename, pattern, {matchBase: true, dot: true})
-        }
-        core.debug(`match: ${match}`)
-      }
-      return match
-    })
+    // Map response files to our ChangedFile interface.
+    const responseFiles: ChangedFile[] = response.data.files.map(
+      (f: {filename: string; status: string; patch?: string}) => ({
+        filename: f.filename,
+        status: f.status,
+        patch: f.patch,
+      })
+    )
 
-    const all = [] as string[],
-      added = [] as string[],
-      modified = [] as string[],
-      removed = [] as string[],
-      renamed = [] as string[],
-      addedModified = [] as string[],
-      addedModifiedRenamed = [] as string[]
-    for (const file of files) {
-      const filename = file.filename
-      // If we're using the 'space-delimited' format and any of the filenames have a space in them,
-      // then fail the step.
-      if (format === 'space-delimited' && filename.includes(' ')) {
-        core.setFailed(
-          `One of your files includes a space. Consider using a different output format or removing spaces from your filenames. ` +
-            "Please submit an issue on this action's GitHub repo."
-        )
-      }
-      all.push(filename)
-      switch (file.status as FileStatus) {
-        case 'added':
-          added.push(filename)
-          addedModified.push(filename)
-          addedModifiedRenamed.push(filename)
-          break
-        case 'modified':
-          modified.push(filename)
-          addedModified.push(filename)
-          addedModifiedRenamed.push(filename)
-          break
-        case 'removed':
-          removed.push(filename)
-          break
-        case 'renamed':
-          renamed.push(filename)
-          addedModifiedRenamed.push(filename)
-          if (file.patch) {
-            // modified renamed files include a patch field
-            modified.push(filename)
-            addedModified.push(filename)
-          }
-          break
-        default:
-          core.setFailed(
-            `One of your files includes an unsupported file status '${file.status}', expected 'added', 'modified', 'removed', or 'renamed'.`
-          )
-      }
-    }
-
-    // Format the arrays of changed files.
-    let allFormatted: string,
-      addedFormatted: string,
-      modifiedFormatted: string,
-      removedFormatted: string,
-      renamedFormatted: string,
-      addedModifiedFormatted: string,
-      addedModifiedRenamedFormatted: string
-    switch (format) {
-      case 'space-delimited':
-        // If any of the filenames have a space in them, then fail the step.
-        for (const file of all) {
-          if (file.includes(' '))
-            core.setFailed(
-              `One of your files includes a space. Consider using a different output format or removing spaces from your filenames.`
-            )
-        }
-        allFormatted = all.join(' ')
-        addedFormatted = added.join(' ')
-        modifiedFormatted = modified.join(' ')
-        removedFormatted = removed.join(' ')
-        renamedFormatted = renamed.join(' ')
-        addedModifiedFormatted = addedModified.join(' ')
-        addedModifiedRenamedFormatted = addedModifiedRenamed.join(' ')
-        break
-      case 'csv':
-        allFormatted = all.join(',')
-        addedFormatted = added.join(',')
-        modifiedFormatted = modified.join(',')
-        removedFormatted = removed.join(',')
-        renamedFormatted = renamed.join(',')
-        addedModifiedFormatted = addedModified.join(',')
-        addedModifiedRenamedFormatted = addedModifiedRenamed.join(',')
-        break
-      case 'json':
-        allFormatted = JSON.stringify(all)
-        addedFormatted = JSON.stringify(added)
-        modifiedFormatted = JSON.stringify(modified)
-        removedFormatted = JSON.stringify(removed)
-        renamedFormatted = JSON.stringify(renamed)
-        addedModifiedFormatted = JSON.stringify(addedModified)
-        addedModifiedRenamedFormatted = JSON.stringify(addedModifiedRenamed)
-        break
-    }
+    const files = filterFiles(responseFiles, filter)
+    const categories = categorizeFiles(files)
+    const formatted = formatOutput(categories, format)
 
     // Log the output values.
-    core.info(`All: ${allFormatted}`)
-    core.info(`Added: ${addedFormatted}`)
-    core.info(`Modified: ${modifiedFormatted}`)
-    core.info(`Removed: ${removedFormatted}`)
-    core.info(`Renamed: ${renamedFormatted}`)
-    core.info(`Added or modified: ${addedModifiedFormatted}`)
-    core.info(`Added, modified or renamed: ${addedModifiedRenamedFormatted}`)
+    core.info(`All: ${formatted.all}`)
+    core.info(`Added: ${formatted.added}`)
+    core.info(`Modified: ${formatted.modified}`)
+    core.info(`Removed: ${formatted.removed}`)
+    core.info(`Renamed: ${formatted.renamed}`)
+    core.info(`Added or modified: ${formatted.addedModified}`)
+    core.info(`Added, modified or renamed: ${formatted.addedModifiedRenamed}`)
 
     // Set step output context.
-    core.setOutput('all', allFormatted)
-    core.setOutput('added', addedFormatted)
-    core.setOutput('modified', modifiedFormatted)
-    core.setOutput('removed', removedFormatted)
-    core.setOutput('renamed', renamedFormatted)
-    core.setOutput('added_modified', addedModifiedFormatted)
-    core.setOutput('added_modified_renamed', addedModifiedRenamedFormatted)
+    core.setOutput('all', formatted.all)
+    core.setOutput('added', formatted.added)
+    core.setOutput('modified', formatted.modified)
+    core.setOutput('removed', formatted.removed)
+    core.setOutput('renamed', formatted.renamed)
+    core.setOutput('added_modified', formatted.addedModified)
+    core.setOutput('added_modified_renamed', formatted.addedModifiedRenamed)
 
     // For backwards-compatibility
-    core.setOutput('deleted', removedFormatted)
+    core.setOutput('deleted', formatted.removed)
   } catch (error) {
-    core.setFailed(error.message)
+    core.setFailed(error instanceof Error ? error.message : String(error))
   }
 }
 
