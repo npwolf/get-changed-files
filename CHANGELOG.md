@@ -1,3 +1,10 @@
+## [1.0.1](https://github.com/npwolf/get-changed-files/compare/v1.0.0...v1.0.1) (2026-03-27)
+
+
+### Bug Fixes
+
+* add pull-requests permission to release workflow ([7f2b4f0](https://github.com/npwolf/get-changed-files/commit/7f2b4f0bc70b25b7c78fd010b5a48a959e10cc8c))
+
 # 1.0.0 (2026-03-27)
 
 
