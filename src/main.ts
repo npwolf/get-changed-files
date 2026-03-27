@@ -1,11 +1,11 @@
 import * as core from '@actions/core'
-import {context, GitHub} from '@actions/github'
+import * as github from '@actions/github'
 import {filterFiles, categorizeFiles, formatOutput, getBaseAndHead, Format, ChangedFile} from './helpers'
 
-async function run(): Promise<void> {
+export async function run(): Promise<void> {
   try {
     // Create GitHub client with the API token.
-    const client = new GitHub(core.getInput('token', {required: true}))
+    const client = github.getOctokit(core.getInput('token', {required: true}))
     const format = core.getInput('format', {required: true}) as Format
     const filter = core.getMultilineInput('filter', {required: true}) || '*'
 
@@ -15,10 +15,10 @@ async function run(): Promise<void> {
     }
 
     // Debug log the payload.
-    core.debug(`Payload keys: ${Object.keys(context.payload)}`)
+    core.debug(`Payload keys: ${Object.keys(github.context.payload)}`)
 
     // Get base and head commits from the event payload.
-    const {base, head} = getBaseAndHead(context.eventName, context.payload)
+    const {base, head} = getBaseAndHead(github.context.eventName, github.context.payload)
 
     // Log the base and head commits
     core.info(`Base commit: ${base}`)
@@ -26,29 +26,27 @@ async function run(): Promise<void> {
 
     // Use GitHub's compare two commits API.
     // https://developer.github.com/v3/repos/commits/#compare-two-commits
-    const response = await client.repos.compareCommits({
+    const response = await client.rest.repos.compareCommits({
       base,
       head,
-      owner: context.repo.owner,
-      repo: context.repo.repo,
+      owner: github.context.repo.owner,
+      repo: github.context.repo.repo,
     })
 
     // Ensure that the request was successful.
     if (response.status !== 200) {
       core.setFailed(
-        `The GitHub API for comparing the base and head commits for this ${context.eventName} event returned ${response.status}, expected 200. ` +
+        `The GitHub API for comparing the base and head commits for this ${github.context.eventName} event returned ${response.status}, expected 200. ` +
           "Please submit an issue on this action's GitHub repo."
       )
     }
 
     // Map response files to our ChangedFile interface.
-    const responseFiles: ChangedFile[] = response.data.files.map(
-      (f: {filename: string; status: string; patch?: string}) => ({
-        filename: f.filename,
-        status: f.status,
-        patch: f.patch,
-      })
-    )
+    const responseFiles: ChangedFile[] = (response.data.files || []).map(f => ({
+      filename: f.filename,
+      status: f.status,
+      patch: f.patch,
+    }))
 
     const files = filterFiles(responseFiles, filter)
     const categories = categorizeFiles(files)
@@ -78,5 +76,3 @@ async function run(): Promise<void> {
     core.setFailed(error instanceof Error ? error.message : String(error))
   }
 }
-
-run()

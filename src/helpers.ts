@@ -1,4 +1,4 @@
-import minimatch from 'minimatch'
+import {minimatch} from 'minimatch'
 
 export type Format = 'space-delimited' | 'csv' | 'json'
 export type FileStatus = 'added' | 'modified' | 'removed' | 'renamed'
