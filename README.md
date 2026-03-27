@@ -1,21 +1,21 @@
 # get-changed-files
 
-[![CI status](https://github.com/Ana06/get-changed-files/workflows/Test/badge.svg)](https://github.com/Ana06/get-changed-files/actions?query=event%3Apush+branch%3Amain)
+[![CI status](https://github.com/npwolf/get-changed-files/workflows/Test/badge.svg)](https://github.com/npwolf/get-changed-files/actions?query=event%3Apush+branch%3Amain)
 [![License](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE.txt)
 
-Get all changed/modified files in a pull request (`pull_request` or `pull_request_target`) or push's commits.
+Get all changed/modified files in a pull request (`pull_request`, `pull_request_target`, or `merge_group`) or push's commits.
 You can choose to get all changed files, only added files, only modified files, only removed files, only renamed files, or all added and modified files.
 These outputs are available via the `steps` output context.
-The `steps` output context exposes the output names `all`, `added`, `modified`, `removed`, `renamed`, and `added_modified` and `added_modified_renamed`.
-Renamed files that are also modified are included in `renamed`, `modified` and `added_modified`.
+The `steps` output context exposes the output names `all`, `added`, `modified`, `removed`, `renamed`, `added_modified`, and `added_modified_renamed`.
+Renamed files that are also modified are included in `renamed`, `modified`, and `added_modified`.
 
-This project is a fork of [jitterbit/get-changed-files](https://github.com/jitterbit/get-changed-files), which:
-- Supports `pull_request_target`
-- Allows to filter files using regular expressions
-- Removes the ahead check
-- Considers renamed modified files as modified
-- Adds `added_modified_renamed` that includes renamed non-modified files and all files in `added_modified`
-- Removes node12 deprecation warnings
+This project is a fork of [jitterbit/get-changed-files](https://github.com/jitterbit/get-changed-files) (via [Ana06/get-changed-files](https://github.com/Ana06/get-changed-files)), which adds:
+- Support for `pull_request_target` and `merge_group` events
+- File filtering using glob patterns
+- Considers renamed+modified files as modified
+- `added_modified_renamed` output including renamed non-modified files and all files in `added_modified`
+- Node 22 runtime
+- Automated releases via semantic-release
 
 ---
 
@@ -27,7 +27,7 @@ This project is a fork of [jitterbit/get-changed-files](https://github.com/jitte
   - [Get all changed `*.yml` files but exclude `.github/*/*.yml` files](#get-all-changed-yml-files-but-exclude-githubyml-files)
   - [Get all added and modified files as CSV](#get-all-added-and-modified-files-as-csv)
   - [Get all removed files as JSON](#get-all-removed-files-as-json)
-- [Install, Build, Lint, Test, and Package](#install-build-lint-test-and-package)
+- [Development](#development)
 - [License](#license)
 
 ## Usage
@@ -35,7 +35,7 @@ This project is a fork of [jitterbit/get-changed-files](https://github.com/jitte
 See [action.yml](action.yml)
 
 ```yaml
-- uses: Ana06/get-changed-files@v2.3.0
+- uses: npwolf/get-changed-files@v1
   with:
     # Format of the steps output context.
     # Can be 'space-delimited', 'csv', or 'json'.
@@ -47,7 +47,7 @@ See [action.yml](action.yml)
 
 ### Filtering
 
-You can filter files using regular expressions with the `filter` option.
+You can filter files using glob patterns with the `filter` option.
 This option receives a list of patterns using [GitHub Actions syntax](https://docs.github.com/en/actions/learn-github-actions/workflow-syntax-for-github-actions#filter-pattern-cheat-sheet).
 You can use `!` at the start of a pattern to negate previous positive patterns.
 See the [Get all changed `*.yml` files but exclude `.github/*/*.yml` files](#get-all-changed-yml-files-but-exclude-githubyml-files) example.
@@ -61,7 +61,7 @@ Consider using one of the other formats if that's the case.
 
 ```yaml
 - id: files
-  uses: Ana06/get-changed-files@v2.3.0
+  uses: npwolf/get-changed-files@v1
 - run: |
     for changed_file in ${{ steps.files.outputs.all }}; do
       echo "Do something with this ${changed_file}."
@@ -75,7 +75,7 @@ Consider using one of the other formats if that's the case.
 
 ```yaml
 - id: files
-  uses: Ana06/get-changed-files@v2.3.0
+  uses: npwolf/get-changed-files@v1
   with:
     filter: '*.php'
 - run: |
@@ -91,7 +91,7 @@ Therefore, including all YML files first and excluding the YML files of your `.g
 If those two globs were inverted, you **would** include all the YML files, with the ones in your `.github/*/` directories.
 
 ```yaml
-- uses: Ana06/get-changed-files@v2.3.0
+- uses: npwolf/get-changed-files@v1
   with:
     filter: |
       *.yml
@@ -102,7 +102,7 @@ If those two globs were inverted, you **would** include all the YML files, with 
 
 ```yaml
 - id: files
-  uses: Ana06/get-changed-files@v2.3.0
+  uses: npwolf/get-changed-files@v1
   with:
     format: 'csv'
     filter: '*'
@@ -117,7 +117,7 @@ If those two globs were inverted, you **would** include all the YML files, with 
 
 ```yaml
 - id: files
-  uses: Ana06/get-changed-files@v2.3.0
+  uses: npwolf/get-changed-files@v1
   with:
     format: 'json'
     filter: '*'
@@ -128,7 +128,7 @@ If those two globs were inverted, you **would** include all the YML files, with 
     done
 ```
 
-## Install, Build, Lint, Test, and Package
+## Development
 
 Make sure to do the following before checking in any code changes.
 
@@ -136,6 +136,11 @@ Make sure to do the following before checking in any code changes.
 yarn
 yarn all
 ```
+
+Releases are automated via [semantic-release](https://github.com/semantic-release/semantic-release). Use [conventional commit](https://www.conventionalcommits.org/) prefixes in PR titles:
+- `feat:` — new features (triggers minor version bump)
+- `fix:` — bug fixes (triggers patch version bump)
+- `chore:`, `docs:`, `ci:`, `refactor:`, `test:` — no release triggered
 
 ## License
 
